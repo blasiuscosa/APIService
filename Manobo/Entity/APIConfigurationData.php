@@ -1,6 +1,6 @@
 <?php
 
-namespace Manobo\Entity;
+//namespace Manobo\Entity;
 
 /**
  * Description of APIConfigurationData

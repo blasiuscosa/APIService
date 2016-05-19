@@ -1,5 +1,5 @@
 <?php
-namespace Manobo\Service;
+//namespace Manobo\Service;
 
 /**
  * Provide interface for any API connection from/to any Sales Partner/Channel

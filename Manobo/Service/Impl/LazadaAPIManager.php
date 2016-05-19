@@ -1,13 +1,15 @@
 <?php
-namespace Manobo\Service\Impl;
+//namespace Manobo\Service\Impl;
+include('./Manobo/Service/APIManager.php');
+include('./Manobo/Entity/APIHistoryData.php');
 
-class LazadaAPIManager extends \Manobo\Service\APIManager {
+class LazadaAPIManager extends APIManager {
     
     const API_URL = 'https://sellercenter-api.lazada.co.id/';
     const API_KEY = 'ac05bc11b491fc0040164c66d4dbe1bd014e15f2';
     const API_USER = 'orders.bonofactum@gmail.com';
     
-    public function updateStock($config_id, $config_type, $dataToSend) {
+    public function updateStock($sku, $quantity) {
         if(function_exists("curl_init")){
             //Get current timezone
             $current_timezone = date_default_timezone_get();
@@ -25,18 +27,25 @@ class LazadaAPIManager extends \Manobo\Service\APIManager {
             );
             
             // XML data to put on request
-            $xmlData = new DOMDocument('1.0', 'UTF-8');
+            $xmlDoc = new DOMDocument('1.0', 'UTF-8');
             libxml_use_internal_errors(true);
-            $xml_request = $xmlData->appendChild($xmlt->createElement('Request'));
-            $xml_product = $xml_request->appendChild($xmlt->createElement('Product'));
-            $xml_product->appendChild($xmlt->createElement('SellerSku', '09000039_45'));
-            $xml_product->appendChild($xmlt->createElement('Quantity', 0));
-            
-            $response = $this->request($parameters, 'POST', $xmlt);
+            $xml_request = $xmlDoc->appendChild($xmlDoc->createElement('Request'));
+            $xml_product = $xml_request->appendChild($xmlDoc->createElement('Product'));
+            $xml_product->appendChild($xmlDoc->createElement('SellerSku', $sku));
+            $xml_product->appendChild($xmlDoc->createElement('Quantity', $quantity));
+
+            $api_hist = new APIHistoryData();
+            $api_hist->setCommand($parameters['Action']);
+            $api_hist->setParameter("SellerSku=$sku|Quantity=$quantity");
+            $response = $this->request($parameters, 'POST', $xmlDoc);
             $request_id = (string)$response->Head->RequestId;
             $result = array();
+            
             if (!is_null($request_id)) {
                 $result['id'] = $request_id;
+                $api_hist->setResponseId($request_id);
+                
+                //Get status if the request is processed or cancelled.
                 $feed_params = array(
                     'Action' => 'FeedStatus',
                     'FeedID' => $request_id,
@@ -44,12 +53,12 @@ class LazadaAPIManager extends \Manobo\Service\APIManager {
                     'UserID' => self::API_USER,
                     'Version' => '1.0'
                 );
-                $feed_response = request($feed_params, 'GET');
+                $feed_response = $this->request($feed_params, 'GET');
                 $feed_status = (string)$feed_response->Body->FeedDetail->Status;
-                if ($feed_status != 'Canceled') {
-                    $result['status'] = $feed_status;
-                }
+                $result['status'] = $feed_status;
+                $api_hist->setStatus($feed_status);
             }
+            $api_hist->save();
             
             //Set current timezone back to its original timezone
             date_default_timezone_set($current_timezone);
@@ -67,10 +76,10 @@ class LazadaAPIManager extends \Manobo\Service\APIManager {
         $concatenated = implode('&', $encoded);
 
         // Compute signature and add it to the parameters.
-        $parameters['Signature'] = rawurlencode(hash_hmac('sha256', $concatenated, $APIData[1]['key'], false));
+        $parameters['Signature'] = rawurlencode(hash_hmac('sha256', $concatenated, self::API_KEY, false));
 
         // Build Query String
-        $queryString = http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
+        $queryString = http_build_query($parameters, '', '&');
         
         //Trigger curl to API Server
         $urlto = self::API_URL . "?" . $queryString;
